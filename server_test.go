@@ -8,9 +8,9 @@ import (
 )
 
 func Test_Server(t *testing.T) {
-	actor := newMockActor(1, 2, 3, 4, 5, 6, 7)
+	driver := newMockDriver(1, 2, 3, 4, 5, 6, 7)
 
-	srv := NewServer[int](actor, Context(context.Background()), HandlerNum(3), Timeout(time.Second))
+	srv := NewServer[int](driver, Context(context.Background()), HandlerNum(3), Timeout(time.Second))
 
 	srv.Serve()
 
@@ -22,13 +22,13 @@ func Test_Server(t *testing.T) {
 		errstr = ""
 	)
 
-	if !reflect.DeepEqual(actor.source, source) {
+	if !reflect.DeepEqual(driver.source, source) {
 		t.Fatal("source")
 	}
-	if !reflect.DeepEqual(actor.to, to) {
+	if !reflect.DeepEqual(driver.to, to) {
 		t.Fatal("to")
 	}
-	if !reflect.DeepEqual(actor.errstr, errstr) {
+	if !reflect.DeepEqual(driver.errstr, errstr) {
 		t.Fatal("errstr")
 	}
 }

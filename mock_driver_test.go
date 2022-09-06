@@ -8,17 +8,17 @@ import (
 )
 
 func Test_Mock(t *testing.T) {
-	actor := newMockActor(1, 2, 3, 4, 5, 6, 7)
+	driver := newMockDriver(1, 2, 3, 4, 5, 6, 7)
 
 	ctx := context.Background()
 
-	msgch, _ := actor.Read(ctx)
+	msgch, _ := driver.Read(ctx)
 
 	for m := range msgch {
-		actor.Handle(ctx, m)
+		driver.Handle(ctx, m)
 	}
 
-	actor.HandleErr(errors.New("mock_error"))
+	driver.HandleErr(errors.New("mock_error"))
 
 	var (
 		source = []int{1, 2, 3, 4, 5, 6, 7}
@@ -26,13 +26,13 @@ func Test_Mock(t *testing.T) {
 		errstr = "mock_error"
 	)
 
-	if !reflect.DeepEqual(actor.source, source) {
+	if !reflect.DeepEqual(driver.source, source) {
 		t.Fatal("source")
 	}
-	if !reflect.DeepEqual(actor.to, to) {
+	if !reflect.DeepEqual(driver.to, to) {
 		t.Fatal("to")
 	}
-	if !reflect.DeepEqual(actor.errstr, errstr) {
+	if !reflect.DeepEqual(driver.errstr, errstr) {
 		t.Fatal("errstr")
 	}
 }

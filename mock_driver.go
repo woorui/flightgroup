@@ -5,22 +5,22 @@ import (
 	"sync"
 )
 
-type mockActor struct {
+type mockDriver struct {
 	mu     sync.Mutex
 	source []int
 	to     map[int]int
 	errstr string
 }
 
-func newMockActor(ints ...int) *mockActor {
-	return &mockActor{
+func newMockDriver(ints ...int) *mockDriver {
+	return &mockDriver{
 		mu:     sync.Mutex{},
 		source: ints,
 		to:     map[int]int{},
 	}
 }
 
-func (c *mockActor) Read(ctx context.Context) (<-chan int, error) {
+func (c *mockDriver) Read(ctx context.Context) (<-chan int, error) {
 	ch := make(chan int)
 	go func() {
 		for _, v := range c.source {
@@ -32,7 +32,7 @@ func (c *mockActor) Read(ctx context.Context) (<-chan int, error) {
 	return ch, nil
 }
 
-func (c *mockActor) Handle(ctx context.Context, n int) error {
+func (c *mockDriver) Handle(ctx context.Context, n int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -41,7 +41,7 @@ func (c *mockActor) Handle(ctx context.Context, n int) error {
 	return nil
 }
 
-func (c *mockActor) HandleErr(e error) {
+func (c *mockDriver) HandleErr(e error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.errstr += e.Error()

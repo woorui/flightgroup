@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// Actor defines how to play with server.
-type Actor[T any] interface {
+// Driver defines how to play with server.
+type Driver[T any] interface {
 	// Read reads sth to channel.
 	Read(context.Context) (<-chan T, error)
 	// Handle Handle sth.
@@ -20,16 +20,16 @@ type Actor[T any] interface {
 // ErrServerClosed represents a completed Shutdown
 var ErrServerClosed = errors.New("trike: server closed")
 
-// Server provides stage for actor playing.
+// Server provides stage for driver playing.
 type Server[T any] struct {
 	options    *options
 	appCtx     context.Context    // appCtx is used to control the lifecycle of the Server.
 	cancelFunc context.CancelFunc // cancelFunc to signal the server should stop requesting messages.
-	actor      Actor[T]
+	driver     Driver[T]
 }
 
 // NewServer returns a server.
-func NewServer[T any](actor Actor[T], option ...Option) *Server[T] {
+func NewServer[T any](driver Driver[T], option ...Option) *Server[T] {
 	options := defaultOptions
 
 	for _, o := range option {
@@ -42,7 +42,7 @@ func NewServer[T any](actor Actor[T], option ...Option) *Server[T] {
 		options:    options,
 		appCtx:     appCtx,
 		cancelFunc: appCancel,
-		actor:      actor,
+		driver:     driver,
 	}
 }
 
@@ -50,7 +50,7 @@ func NewServer[T any](actor Actor[T], option ...Option) *Server[T] {
 func (srv *Server[T]) Serve() error {
 	var wg sync.WaitGroup
 
-	msgch, err := srv.actor.Read(srv.appCtx)
+	msgch, err := srv.driver.Read(srv.appCtx)
 	if err != nil {
 		return err
 	}
@@ -74,12 +74,12 @@ func (srv *Server[T]) Serve() error {
 					userCtx, cancel := context.WithTimeout(context.Background(), srv.options.timeout)
 					defer cancel()
 
-					err = srv.actor.Handle(userCtx, msg)
+					err = srv.driver.Handle(userCtx, msg)
 				} else {
-					err = srv.actor.Handle(context.Background(), msg)
+					err = srv.driver.Handle(context.Background(), msg)
 				}
 				if err != nil {
-					srv.actor.HandleErr(err)
+					srv.driver.HandleErr(err)
 				}
 				<-worker
 			}()
