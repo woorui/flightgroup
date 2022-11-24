@@ -1,3 +1,3 @@
-module github.com/woorui/bunch
+module github.com/woorui/flightgroup
 
-go 1.18
+go 1.19
