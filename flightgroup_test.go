@@ -17,11 +17,11 @@ func Test(t *testing.T) {
 	var (
 		reader  = &mockReader{data: testdata}
 		handler = &mockHandler{limit: len(testdata)}
-		group   = FlightGroup[int](ctx, reader, HandleFunc[int](handler.Handle))
+		group   = FlightGroup[int](ctx, reader, HandleFunc[int](handler.Handle), Timeout(1*time.Second), PoolSize(12))
 	)
 
 	// close later.
-	time.AfterFunc(time.Microsecond, func() {
+	time.AfterFunc(time.Millisecond, func() {
 		t.Logf(
 			"The test logic is pipe reader to handler: reader %v, handler: %v, initReader: %v",
 			reader.result(),
@@ -91,7 +91,7 @@ type mockHandler struct {
 
 var errLimitReached = errors.New("handler: limit reached")
 
-func (h *mockHandler) Handle(i int) error {
+func (h *mockHandler) Handle(ctx context.Context, i int) error {
 	if h.err != nil {
 		return h.err
 	}
