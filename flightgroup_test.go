@@ -16,12 +16,12 @@ func Test(t *testing.T) {
 
 	var (
 		reader  = &mockReader{data: testdata}
-		handler = &mockHandler{limit: len(testdata)}
-		group   = FlightGroup[int](ctx, reader, HandleFunc[int](handler.Handle), Timeout(1*time.Second), PoolSize(12))
+		handler = &mockHandler{limit: len(testdata), sleep: time.Millisecond * 200}
+		group   = FlightGroup[int](ctx, reader, HandleFunc[int](handler.Handle), Timeout(time.Second), PoolSize(1))
 	)
 
 	// close later.
-	time.AfterFunc(time.Millisecond, func() {
+	time.AfterFunc(time.Second, func() {
 		t.Logf(
 			"The test logic is pipe reader to handler: reader %v, handler: %v, initReader: %v",
 			reader.result(),
@@ -73,6 +73,7 @@ func (r *mockReader) Read() (int, error) {
 		r.data = r.data[1:]
 		return item, nil
 	}
+	// time.Sleep(100 * time.Second)
 	return 0, io.EOF
 }
 

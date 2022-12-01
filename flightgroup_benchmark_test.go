@@ -17,7 +17,13 @@ var (
 	testdata = make([]int, runtimes)
 )
 
-func BenchmarkGoroutines(b *testing.B) {
+func init() {
+	for i := range testdata {
+		testdata[i] = i
+	}
+}
+
+func BenchmarkNative(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var (
 			reader  = &mockReader{data: testdata}
