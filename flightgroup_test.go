@@ -57,13 +57,16 @@ func Test(t *testing.T) {
 }
 
 type mockReader struct {
-	mu   sync.Mutex
-	data []int
+	mu    sync.Mutex
+	data  []int
+	sleep time.Duration
 }
 
 func (r *mockReader) Read() (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	time.Sleep(r.sleep)
 
 	if len(r.data) > 0 {
 		item := r.data[0]
@@ -73,11 +76,13 @@ func (r *mockReader) Read() (int, error) {
 	return 0, io.EOF
 }
 
-func (h *mockReader) result() []int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+func (r *mockReader) result() []int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	return h.data
+	res := make([]int, len(r.data))
+	copy(res, r.data)
+	return res
 }
 
 func (r *mockReader) Close() error { return nil }
@@ -85,6 +90,7 @@ func (r *mockReader) Close() error { return nil }
 type mockHandler struct {
 	mu    sync.Mutex
 	limit int
+	sleep time.Duration
 	data  []int
 	err   error
 }
@@ -99,6 +105,8 @@ func (h *mockHandler) Handle(ctx context.Context, i int) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	time.Sleep(h.sleep)
+
 	h.data = append(h.data, i)
 	if len(h.data) == h.limit {
 		return errLimitReached
@@ -111,5 +119,7 @@ func (h *mockHandler) result() []int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	return h.data
+	res := make([]int, len(h.data))
+	copy(res, h.data)
+	return res
 }
