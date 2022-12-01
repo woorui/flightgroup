@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/panjf2000/ants/v2"
 )
 
 // go test -bench=. -count=5 -benchmem
@@ -53,5 +55,33 @@ func BenchmarkFlightGroup(b *testing.B) {
 				break
 			}
 		}
+	}
+}
+
+func BenchmarkAnts(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		var (
+			reader  = &mockReader{data: testdata}
+			handler = &mockHandler{limit: len(testdata), sleep: time.Microsecond}
+		)
+
+		pool, _ := ants.NewPool(10000)
+		defer pool.Release()
+
+		var wg sync.WaitGroup
+		for {
+			i, err := reader.Read()
+			if err != nil {
+				break
+			}
+			wg.Add(1)
+
+			pool.Submit(func() {
+				defer wg.Done()
+				handler.Handle(ctx, i)
+			})
+		}
+
+		wg.Wait()
 	}
 }
