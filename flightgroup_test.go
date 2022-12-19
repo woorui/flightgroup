@@ -16,14 +16,14 @@ func Test(t *testing.T) {
 
 	var (
 		reader  = &mockReader{data: testdata}
-		handler = &mockHandler{limit: len(testdata), sleep: time.Millisecond * 200}
-		group   = FlightGroup[int](ctx, reader, HandleFunc[int](handler.Handle), Timeout(time.Second), PoolSize(1))
+		handler = &mockHandler{limit: len(testdata), sleep: time.Millisecond}
+		group   = FlightGroup[int](ctx, reader, HandleFunc[int](handler.Handle), Cap(1), ReadTimeout(time.Second), HandleTimeout(time.Microsecond))
 	)
 
 	// close later.
-	time.AfterFunc(time.Second, func() {
+	time.AfterFunc(time.Millisecond, func() {
 		t.Logf(
-			"The test logic is pipe reader to handler: reader %v, handler: %v, initReader: %v",
+			"Receive Close sign, The test logic is pipe reader to handler: reader %v, handler: %v, initReader: %v",
 			reader.result(),
 			handler.result(),
 			testdata,
@@ -46,11 +46,11 @@ func Test(t *testing.T) {
 
 	t.Run("close multiple times", func(t *testing.T) {
 		err := group.Close()
-		if err != ErrFlightGroupClosed {
+		if err != ErrClosed {
 			t.Fatalf(
 				"close group multiple times get: %v, want: %v",
 				err,
-				ErrFlightGroupClosed,
+				ErrClosed,
 			)
 		}
 	})
@@ -98,7 +98,7 @@ type mockHandler struct {
 
 var errLimitReached = errors.New("handler: limit reached")
 
-func (h *mockHandler) Handle(ctx context.Context, i int) error {
+func (h *mockHandler) Handle(i int) error {
 	if h.err != nil {
 		return h.err
 	}

@@ -23,6 +23,22 @@ func init() {
 	}
 }
 
+func BenchmarkFlightGroup(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		var (
+			reader  = &mockReader{data: testdata}
+			handler = &mockHandler{limit: len(testdata), sleep: time.Microsecond}
+			group   = FlightGroup[int](ctx, reader, HandleFunc[int](handler.Handle), ReadTimeout(1*time.Second), HandleTimeout(time.Second), Cap(10000))
+		)
+		for err := range group.ErrChan {
+			if err != nil {
+				go group.Close()
+				break
+			}
+		}
+	}
+}
+
 func BenchmarkNative(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var (
@@ -40,27 +56,11 @@ func BenchmarkNative(b *testing.B) {
 
 			go func(i int) {
 				defer wg.Done()
-				handler.Handle(ctx, i)
+				handler.Handle(i)
 			}(i)
 		}
 
 		wg.Wait()
-	}
-}
-
-func BenchmarkFlightGroup(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		var (
-			reader  = &mockReader{data: testdata}
-			handler = &mockHandler{limit: len(testdata), sleep: time.Microsecond}
-			group   = FlightGroup[int](ctx, reader, HandleFunc[int](handler.Handle), Timeout(1*time.Second), PoolSize(10000))
-		)
-		for err := range group.ErrChan {
-			if err != nil {
-				go group.Close()
-				break
-			}
-		}
 	}
 }
 
@@ -84,7 +84,7 @@ func BenchmarkAnts(b *testing.B) {
 
 			pool.Submit(func() {
 				defer wg.Done()
-				handler.Handle(ctx, i)
+				handler.Handle(i)
 			})
 		}
 

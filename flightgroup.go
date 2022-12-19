@@ -3,6 +3,7 @@ package flightgroup
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,18 +21,31 @@ type Reader[T any] interface {
 // Handler defines how to handle data from Reader.
 type Handler[T any] interface {
 	// Handle handles the data.
-	Handle(ctx context.Context, data T) error
+	Handle(data T) error
 }
 
 // The HandleFunc is an adapter to allow the use of ordinary functions
 // as a Handler. HandleFunc(fn) is a Handler that calls f.
-type HandleFunc[T any] func(context.Context, T) error
+type HandleFunc[T any] func(T) error
 
 // Handle calls HandleFunc itself.
-func (f HandleFunc[T]) Handle(ctx context.Context, data T) error { return f(ctx, data) }
+func (f HandleFunc[T]) Handle(data T) error { return f(data) }
 
-// ErrFlightGroupClosed be returned after group close.
-var ErrFlightGroupClosed = errors.New("flightgroup: group has closed")
+var (
+	// ErrClosed be returned after group close.
+	ErrClosed = errors.New("flightgroup closed")
+	// ErrReadTimeout be returned if read timeout.
+	ErrReadTimeout = errors.New("flightgroup: read timeout")
+)
+
+// ErrReadTimeout be returned if read timeout.
+type ErrHandleTimeout[T any] struct{ data T }
+
+// NewErrHandleTimeout returns ErrReadTimeout with data be handled.
+func NewErrHandleTimeout[T any](data T) ErrHandleTimeout[T] { return ErrHandleTimeout[T]{data} }
+
+// Error returns error message.
+func (e ErrHandleTimeout[T]) Error() string { return "flightgroup: handle timeout" }
 
 // Group holds a reader and a handler,
 // group reads data from reader, and pass in handler to handle it.
@@ -69,77 +83,105 @@ func FlightGroup[T any](ctx context.Context, reader Reader[T], handler Handler[T
 		opt(group.options)
 	}
 
-	go group.consume(group.read(ctx))
+	go group.consume(
+		group.options.cap,
+		group.reading(ctx),
+	)
 
 	return group
 }
 
-// read reads data from stream and sends them to a chan.
-func (g *Group[T]) read(ctx context.Context) chan T {
-	datch := make(chan T)
+type pipe[T any] struct {
+	data T
+	err  error
+}
+
+// reading continuous reads data from stream and sends them to a group woker.
+func (g *Group[T]) reading(ctx context.Context) chan pipe[T] {
+	ch := make(chan pipe[T])
 
 	g.flight.Add(1)
 	go func() {
-		defer func() {
-			close(datch)
-			g.flight.Done()
-		}()
+		defer g.flight.Done()
 
 		for {
+			var t <-chan time.Time
+			if g.options.readTimeout != 0 {
+				t = time.After(g.options.readTimeout)
+			}
 			select {
 			case <-ctx.Done():
 				return
 			case <-g.done:
 				return
-			default:
+			case <-t:
+				g.ErrChan <- ErrReadTimeout
+			case ch <- g.read():
 			}
-			data, err := g.reader.Read()
-			if err != nil {
-				g.ErrChan <- err
-				continue
-			}
-			datch <- data
 		}
 	}()
 
-	return datch
+	return ch
 }
 
-// consume consumes data from read reads channel.
-func (g *Group[T]) consume(datch chan T) {
-	size := g.options.poolSize
+// consume consumes data from read reads channel using cap goroutinues.
+func (g *Group[T]) consume(cap int, ch chan pipe[T]) {
+	g.flight.Add(cap)
 
-	g.flight.Add(size)
-
-	for i := 0; i < size; i++ {
+	for i := 0; i < cap; i++ {
 		go func() {
 			defer g.flight.Done()
-			for data := range datch {
-				g.handleWithTimeout(data)
+
+			for {
+				select {
+				case <-g.done:
+					return
+				case out := <-ch:
+					if out.err != nil {
+						g.ErrChan <- out.err
+					} else {
+						if err := g.handle(out.data); err != nil {
+							g.ErrChan <- err
+						}
+					}
+				}
 			}
 		}()
 	}
 }
 
-func (g *Group[T]) handleWithTimeout(data T) {
-	// TODO: this ctx loss Value from ctx passed by externals.
-	ctx := context.Background()
-	if g.options.timeout != 0 {
-		ctx, cancel := context.WithTimeout(ctx, g.options.timeout)
-		defer cancel()
+func (g *Group[T]) read() pipe[T] {
+	data, err := g.reader.Read()
 
-		if err := g.handler.Handle(ctx, data); err != nil {
-			g.ErrChan <- err
-		}
+	return pipe[T]{data, err}
+}
+
+func (g *Group[T]) handle(data T) error {
+	ch := make(chan error)
+
+	go func() {
+		ch <- g.handler.Handle(data)
+	}()
+
+	var t <-chan time.Time
+	if g.options.handleTimeout != 0 {
+		t = time.After(g.options.handleTimeout)
+	}
+
+	select {
+	case err := <-ch:
+		return err
+	case <-t:
+		return NewErrHandleTimeout(data)
 	}
 }
 
 // Close close the group, It blocked until all handlers return.
 //
-// Closing multiple times returns ErrFlightGroupClosed.
+// Closing multiple times returns ErrClosed.
 func (g *Group[T]) Close() error {
 	if g.closed.Load() {
-		return ErrFlightGroupClosed
+		return ErrClosed
 	}
 	g.closed.Store(true)
 
@@ -155,25 +197,34 @@ func (g *Group[T]) Close() error {
 type Option func(o *options)
 
 type options struct {
-	timeout  time.Duration
-	poolSize int
+	cap           int
+	handleTimeout time.Duration
+	readTimeout   time.Duration
 }
 
 var defaultOptions = &options{
-	timeout:  0,
-	poolSize: 64,
+	readTimeout:   time.Second,
+	handleTimeout: 10 * time.Second,
+	cap:           runtime.GOMAXPROCS(-1) * 64,
 }
 
-// Timeout is timeout for handler.
-func Timeout(t time.Duration) Option {
+// HandleTimeout is timereadout for handler.
+func HandleTimeout(t time.Duration) Option {
 	return func(o *options) {
-		o.timeout = t
+		o.handleTimeout = t
 	}
 }
 
-// PoolSize defines how many goroutine to play handler.
-func PoolSize(size uint32) Option {
+// ReadTimeout is timereadout for reader.
+func ReadTimeout(t time.Duration) Option {
 	return func(o *options) {
-		o.poolSize = int(size)
+		o.readTimeout = t
+	}
+}
+
+// Cap defines how many gorreadoutine to play handler.
+func Cap(cap uint32) Option {
+	return func(o *options) {
+		o.cap = int(cap)
 	}
 }
